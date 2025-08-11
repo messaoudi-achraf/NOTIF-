@@ -1,0 +1,311 @@
+// ===================================================
+// WEBSOCKET CONFIG SÉPARÉ - CORRIGÉ
+// ===================================================
+
+// src/main/java/com/trading/platform/notification/config/WebSocketConfig.java
+package com.trading.platform.notification.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
+import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
+import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+
+/**
+ * Configuration WebSocket SÉPARÉE - Version corrigée
+ */
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+
+    /**
+     * Configuration du message broker
+     */
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+        // Enable simple broker pour les destinations
+        config.enableSimpleBroker("/topic", "/queue");
+        
+        // Préfixe pour les messages de l'application
+        config.setApplicationDestinationPrefixes("/app");
+        
+        // SUPPRIMÉ: setUserDestinationPrefixes car méthode inexistante dans certaines versions
+        // La gestion des utilisateurs se fait automatiquement avec /user
+    }
+
+    /**
+     * Configuration des endpoints STOMP
+     */
+    @Override
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
+        // Endpoint principal pour WebSocket
+        registry.addEndpoint("/ws-notifications")
+                .setAllowedOriginPatterns("*")
+                .withSockJS();
+        
+        // Endpoint alternatif sans SockJS (optionnel)
+        registry.addEndpoint("/ws-direct")
+                .setAllowedOriginPatterns("*");
+    }
+
+    /**
+     * Bean SimpMessagingTemplate pour injection
+     */
+    @Bean
+    public SimpMessagingTemplate messagingTemplate() {
+        return new SimpMessagingTemplate(clientOutboundChannel());
+    }
+    
+    /**
+     * Channel pour messages sortants
+     */
+    @Bean
+    public org.springframework.messaging.MessageChannel clientOutboundChannel() {
+        return new org.springframework.messaging.support.ExecutorSubscribableChannel();
+    }
+}
+
+
+
+
+
+
+
+
+
+
+// ===================================================
+// WEB CONFIG SÉPARÉ - SANS WEBSOCKET
+// ===================================================
+
+// src/main/java/com/trading/platform/notification/config/WebConfig.java
+package com.trading.platform.notification.config;
+
+import org.springframework.cloud.client.loadbalancer.LoadBalanced;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+/**
+ * Configuration Web SÉPARÉE - Sans WebSocket
+ */
+@Configuration
+public class WebConfig implements WebMvcConfigurer {
+
+    /**
+     * Configuration CORS pour API REST
+     */
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        // Configuration CORS pour les API REST
+        registry.addMapping("/api/**")
+                .allowedOriginPatterns("*")
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(true);
+        
+        // Configuration CORS pour WebSocket
+        registry.addMapping("/ws-notifications/**")
+                .allowedOriginPatterns("*")
+                .allowCredentials(true);
+        
+        // Configuration CORS globale
+        registry.addMapping("/**")
+                .allowedOriginPatterns("*")
+                .allowedMethods("*")
+                .allowedHeaders("*")
+                .allowCredentials(true);
+    }
+
+    /**
+     * RestTemplate avec Load Balancer pour communication inter-services
+     */
+    @Bean
+    @LoadBalanced
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
+}
+
+
+
+
+
+// ===================================================
+// WEBSOCKET SERVICE - VERSION COMPLÈTE CORRIGÉE
+// ===================================================
+
+// src/main/java/com/trading/platform/notification/service/WebSocketService.java
+package com.trading.platform.notification.service;
+
+import com.trading.platform.notification.entity.Notification;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Service;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Service WebSocket pour notifications temps réel - Version complète
+ */
+@Service
+@Slf4j
+public class WebSocketService {
+
+    @Autowired(required = false)
+    private SimpMessagingTemplate messagingTemplate;
+
+    /**
+     * Broadcast notification à tous les utilisateurs connectés
+     */
+    public void broadcastNotification(Notification notification) {
+        if (messagingTemplate == null) {
+            log.warn("⚠️ WebSocket not configured - notification {} logged only", notification.getId());
+            return;
+        }
+        
+        try {
+            // Envoyer à tous les clients connectés
+            messagingTemplate.convertAndSend("/topic/notifications", createWebSocketMessage(notification));
+            log.info("📡 WebSocket broadcast sent: {}", notification.getId());
+        } catch (Exception e) {
+            log.error("❌ WebSocket broadcast failed for notification {}: {}", notification.getId(), e.getMessage());
+        }
+    }
+
+    /**
+     * Envoyer notification à un utilisateur spécifique
+     */
+    public void sendToUser(String userId, Notification notification) {
+        if (messagingTemplate == null) {
+            log.warn("⚠️ WebSocket not configured - notification {} for user {} logged only", notification.getId(), userId);
+            return;
+        }
+        
+        try {
+            // Envoyer à un utilisateur spécifique
+            messagingTemplate.convertAndSendToUser(userId, "/queue/alerts", createWebSocketMessage(notification));
+            log.info("📱 WebSocket sent to user {}: {}", userId, notification.getId());
+        } catch (Exception e) {
+            log.error("❌ WebSocket send to user {} failed for notification {}: {}", userId, notification.getId(), e.getMessage());
+        }
+    }
+
+    /**
+     * Envoyer alerte critique (priorité haute)
+     */
+    public void sendCriticalAlert(Notification notification) {
+        if (messagingTemplate == null) {
+            log.warn("⚠️ WebSocket not configured - critical alert {} logged only", notification.getId());
+            return;
+        }
+        
+        try {
+            // Envoyer sur canal critique
+            messagingTemplate.convertAndSend("/topic/critical", createWebSocketMessage(notification));
+            log.warn("🚨 Critical alert sent via WebSocket: {}", notification.getId());
+        } catch (Exception e) {
+            log.error("❌ Critical alert WebSocket failed for notification {}: {}", notification.getId(), e.getMessage());
+        }
+    }
+
+    /**
+     * Test WebSocket
+     */
+    public boolean testWebSocket(String message) {
+        if (messagingTemplate == null) {
+            log.warn("⚠️ WebSocket not configured - test message logged only: {}", message);
+            return false;
+        }
+        
+        try {
+            Map<String, Object> testMessage = new HashMap<>();
+            testMessage.put("type", "TEST");
+            testMessage.put("message", message);
+            testMessage.put("timestamp", java.time.LocalDateTime.now().toString());
+            testMessage.put("service", "notification-service");
+            
+            messagingTemplate.convertAndSend("/topic/test", testMessage);
+            log.info("🧪 WebSocket test message sent: {}", message);
+            return true;
+        } catch (Exception e) {
+            log.error("❌ WebSocket test failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Vérifier si WebSocket est disponible
+     */
+    public boolean isWebSocketAvailable() {
+        boolean available = messagingTemplate != null;
+        log.debug("WebSocket availability: {}", available);
+        return available;
+    }
+
+    /**
+     * Créer message formaté pour WebSocket
+     */
+    private Map<String, Object> createWebSocketMessage(Notification notification) {
+        Map<String, Object> message = new HashMap<>();
+        message.put("id", notification.getId());
+        message.put("type", notification.getType().toString());
+        message.put("priority", notification.getPriority().toString());
+        message.put("title", notification.getTitle());
+        message.put("message", notification.getMessage());
+        message.put("status", notification.getStatus().toString());
+        message.put("sourceService", notification.getSourceService());
+        message.put("positionId", notification.getPositionId());
+        message.put("tradeId", notification.getTradeId());
+        message.put("createdAt", notification.getCreatedAt() != null ? 
+                notification.getCreatedAt().toString() : null);
+        message.put("timestamp", java.time.LocalDateTime.now().toString());
+        
+        return message;
+    }
+
+    /**
+     * Envoyer statistiques en temps réel
+     */
+    public void sendStats(Map<String, Object> stats) {
+        if (messagingTemplate == null) {
+            log.debug("WebSocket not configured - stats not sent");
+            return;
+        }
+        
+        try {
+            messagingTemplate.convertAndSend("/topic/stats", stats);
+            log.debug("📊 Stats sent via WebSocket");
+        } catch (Exception e) {
+            log.error("❌ Stats WebSocket failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Envoyer message de connexion/déconnexion de service
+     */
+    public void sendServiceStatus(String serviceName, String status) {
+        if (messagingTemplate == null) {
+            return;
+        }
+        
+        try {
+            Map<String, Object> statusMessage = new HashMap<>();
+            statusMessage.put("serviceName", serviceName);
+            statusMessage.put("status", status);
+            statusMessage.put("timestamp", java.time.LocalDateTime.now().toString());
+            
+            messagingTemplate.convertAndSend("/topic/service-status", statusMessage);
+            log.info("🔗 Service status sent via WebSocket: {} = {}", serviceName, status);
+        } catch (Exception e) {
+            log.error("❌ Service status WebSocket failed: {}", e.getMessage());
+        }
+    }
+}
+
