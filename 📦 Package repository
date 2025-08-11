@@ -1,0 +1,149 @@
+// ===================================================
+// PACKAGE REPOSITORY - REPOSITORY SIMPLE
+// ===================================================
+
+// src/main/java/com/trading/platform/notification/repository/NotificationRepository.java
+package com.trading.platform.notification.repository;
+
+import com.trading.platform.notification.entity.Notification;
+import com.trading.platform.notification.entity.NotificationStatus;
+import com.trading.platform.notification.entity.NotificationType;
+import com.trading.platform.notification.entity.Priority;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+/**
+ * Repository pour les notifications - Version simplifiée
+ */
+@Repository
+public interface NotificationRepository extends JpaRepository<Notification, Long> {
+
+    // === REQUÊTES DE BASE ===
+
+    /**
+     * Trouver par statut
+     */
+    List<Notification> findByStatus(NotificationStatus status);
+
+    /**
+     * Trouver par type
+     */
+    List<Notification> findByType(NotificationType type);
+
+    /**
+     * Trouver par priorité
+     */
+    List<Notification> findByPriority(Priority priority);
+
+    /**
+     * Trouver par utilisateur
+     */
+    List<Notification> findByRecipientUserIdOrderByCreatedAtDesc(String userId);
+
+    /**
+     * Notifications récentes (toutes)
+     */
+    @Query("SELECT n FROM Notification n ORDER BY n.createdAt DESC")
+    List<Notification> findRecentNotifications();
+
+    /**
+     * Notifications récentes avec limite
+     */
+    @Query("SELECT n FROM Notification n ORDER BY n.createdAt DESC LIMIT :limit")
+    List<Notification> findRecentNotifications(@Param("limit") int limit);
+
+    // === REQUÊTES POUR BROADCAST ===
+
+    /**
+     * Notifications de trade (broadcast)
+     */
+    List<Notification> findByTypeOrderByCreatedAtDesc(NotificationType type);
+
+    /**
+     * Notifications par service source
+     */
+    List<Notification> findBySourceServiceOrderByCreatedAtDesc(String sourceService);
+
+    // === REQUÊTES POUR ALERTES UTILISATEUR ===
+
+    /**
+     * Alertes non lues pour un utilisateur
+     */
+    @Query("SELECT n FROM Notification n WHERE n.recipientUserId = :userId " +
+           "AND n.type = 'LIMIT_ALERT' AND n.readAt IS NULL ORDER BY n.createdAt DESC")
+    List<Notification> findUnreadLimitAlerts(@Param("userId") String userId);
+
+    /**
+     * Alertes critiques non lues
+     */
+    @Query("SELECT n FROM Notification n WHERE n.priority = 'CRITICAL' " +
+           "AND n.readAt IS NULL ORDER BY n.createdAt DESC")
+    List<Notification> findUnreadCriticalAlerts();
+
+    // === REQUÊTES POUR RAPPORTS ===
+
+    /**
+     * Notifications dans une période
+     */
+    @Query("SELECT n FROM Notification n WHERE n.createdAt >= :start " +
+           "AND n.createdAt <= :end ORDER BY n.createdAt DESC")
+    List<Notification> findNotificationsBetween(@Param("start") LocalDateTime start, 
+                                               @Param("end") LocalDateTime end);
+
+    /**
+     * Compter par statut depuis une date
+     */
+    @Query("SELECT COUNT(n) FROM Notification n WHERE n.status = :status " +
+           "AND n.createdAt >= :since")
+    long countByStatusSince(@Param("status") NotificationStatus status, 
+                           @Param("since") LocalDateTime since);
+
+    /**
+     * Compter par type depuis une date
+     */
+    @Query("SELECT COUNT(n) FROM Notification n WHERE n.type = :type " +
+           "AND n.createdAt >= :since")
+    long countByTypeSince(@Param("type") NotificationType type, 
+                         @Param("since") LocalDateTime since);
+
+    // === REQUÊTES POUR NETTOYAGE ===
+
+    /**
+     * Notifications anciennes à supprimer
+     */
+    @Query("SELECT n FROM Notification n WHERE n.createdAt < :cutoff " +
+           "AND n.status IN ('SENT', 'DELIVERED', 'READ', 'EXPIRED')")
+    List<Notification> findOldNotificationsForCleanup(@Param("cutoff") LocalDateTime cutoff);
+
+    /**
+     * Notifications en échec à retry
+     */
+    @Query("SELECT n FROM Notification n WHERE n.status = 'FAILED' " +
+           "AND n.createdAt >= :since ORDER BY n.createdAt ASC")
+    List<Notification> findFailedNotificationsForRetry(@Param("since") LocalDateTime since);
+
+    // === REQUÊTES POUR STATISTIQUES SIMPLES ===
+
+    /**
+     * Statistiques quotidiennes
+     */
+    @Query("SELECT " +
+           "COUNT(CASE WHEN n.status = 'SENT' THEN 1 END) as sent, " +
+           "COUNT(CASE WHEN n.status = 'FAILED' THEN 1 END) as failed, " +
+           "COUNT(CASE WHEN n.type = 'TRADE_BROADCAST' THEN 1 END) as trades, " +
+           "COUNT(CASE WHEN n.type = 'LIMIT_ALERT' THEN 1 END) as alerts " +
+           "FROM Notification n WHERE n.createdAt >= :since")
+    Object[] getDailyStatistics(@Param("since") LocalDateTime since);
+
+    /**
+     * Notifications par service (statistiques)
+     */
+    @Query("SELECT n.sourceService, COUNT(n) FROM Notification n " +
+           "WHERE n.createdAt >= :since GROUP BY n.sourceService")
+    List<Object[]> getNotificationCountByService(@Param("since") LocalDateTime since);
+}
