@@ -1,0 +1,100 @@
+// ===================================================
+// PACKAGE CONFIG - CONFIGURATIONS SIMPLES
+// ===================================================
+
+// src/main/java/com/trading/platform/notification/config/WebConfig.java
+package com.trading.platform.notification.config;
+
+import org.springframework.cloud.client.loadbalancer.LoadBalanced;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
+import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
+import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+
+/**
+ * Configuration Web et WebSocket - Simple
+ */
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebConfig implements WebSocketMessageBrokerConfigurer, WebMvcConfigurer {
+
+    /**
+     * Configuration WebSocket
+     */
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+        // Enable simple broker pour destinations
+        config.enableSimpleBroker("/topic", "/queue");
+        
+        // Préfixe pour messages de l'application
+        config.setApplicationDestinationPrefixes("/app");
+        
+        // Préfixe pour messages utilisateur spécifiques
+        config.setUserDestinationPrefixes("/user");
+    }
+
+    /**
+     * Configuration endpoints WebSocket
+     */
+    @Override
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
+        // Endpoint WebSocket principal
+        registry.addEndpoint("/ws-notifications")
+                .setAllowedOriginPatterns("*")
+                .withSockJS();
+    }
+
+    /**
+     * Configuration CORS
+     */
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/api/**")
+                .allowedOriginPatterns("*")
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(true);
+    }
+
+    /**
+     * RestTemplate pour communication inter-services
+     */
+    @Bean
+    @LoadBalanced
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
+}
+
+// src/main/java/com/trading/platform/notification/config/SchedulingConfig.java
+package com.trading.platform.notification.config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.SchedulingConfigurer;
+import org.springframework.scheduling.config.ScheduledTaskRegistrar;
+
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+
+/**
+ * Configuration pour tâches programmées
+ */
+@Configuration
+@EnableScheduling
+public class SchedulingConfig implements SchedulingConfigurer {
+
+    @Override
+    public void configureTasks(ScheduledTaskRegistrar taskRegistrar) {
+        taskRegistrar.setScheduler(taskExecutor());
+    }
+
+    public Executor taskExecutor() {
+        return Executors.newScheduledThreadPool(2);
+    }
+}
