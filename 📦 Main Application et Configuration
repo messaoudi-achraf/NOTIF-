@@ -1,0 +1,192 @@
+// ===================================================
+// MAIN APPLICATION
+// ===================================================
+
+// src/main/java/com/trading/platform/notification/NotificationServiceApplication.java
+package com.trading.platform.notification;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
+import org.springframework.scheduling.annotation.EnableAsync;
+
+/**
+ * Application Notification Service - Version simplifiée
+ */
+@SpringBootApplication
+@EnableEurekaClient
+@EnableAsync
+public class NotificationServiceApplication {
+
+    public static void main(String[] args) {
+        // Configuration système
+        System.setProperty("spring.jpa.open-in-view", "false");
+        
+        SpringApplication.run(NotificationServiceApplication.class, args);
+    }
+}
+
+// ===================================================
+// APPLICATION.PROPERTIES - CONFIGURATION SIMPLE
+// ===================================================
+
+/*
+# src/main/resources/application.properties
+
+# === SERVER ===
+server.port=8087
+spring.application.name=notification-service
+
+# === DATABASE ===
+spring.datasource.url=jdbc:postgresql://localhost:5432/trading_notifications
+spring.datasource.username=postgres
+spring.datasource.password=8868
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# === JPA ===
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=false
+spring.jpa.open-in-view=false
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+
+# === EUREKA ===
+eureka.client.register-with-eureka=true
+eureka.client.fetch-registry=true
+eureka.client.service-url.defaultZone=http://localhost:8761/eureka
+eureka.instance.prefer-ip-address=true
+
+# === CONFIG SERVER ===
+spring.cloud.config.enabled=false
+
+# === EMAIL (DISABLED) ===
+notification.email.enabled=false
+
+# === WEBSOCKET ===
+notification.websocket.enabled=true
+
+# === ACTUATOR ===
+management.endpoints.web.exposure.include=health,info
+management.endpoint.health.show-details=always
+
+# === LOGGING ===
+logging.level.com.trading.platform.notification=INFO
+logging.level.org.springframework.cloud=WARN
+logging.level.org.springframework.messaging=INFO
+
+# === COMPATIBILITY ===
+spring.cloud.compatibility-verifier.enabled=false
+*/
+
+// ===================================================
+// DATA.SQL - DONNÉES INITIALES
+// ===================================================
+
+/*
+# src/main/resources/data.sql
+
+-- Données d'exemple pour tests (optionnel)
+INSERT INTO notifications (type, priority, title, message, source_service, status, created_at) 
+VALUES 
+('INFO', 'LOW', 'Service Started', 'Notification Service has started successfully', 'notification-service', 'SENT', NOW()),
+('TRADE_BROADCAST', 'MEDIUM', 'System Ready', 'Trading notification system is ready to receive events', 'notification-service', 'SENT', NOW())
+ON CONFLICT DO NOTHING;
+*/
+
+// ===================================================
+// POM.XML - DÉPENDANCES SIMPLIFIÉES
+// ===================================================
+
+/*
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.trading.platform</groupId>
+        <artifactId>trading-platform</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>notification-service</artifactId>
+    <name>notification-service</name>
+    <description>Notification Service for Trading Platform</description>
+
+    <dependencies>
+        <!-- Spring Boot Starters -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+        
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Spring Cloud -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+        
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+
+        <!-- Database -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- JSON Processing -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Tests -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+*/
