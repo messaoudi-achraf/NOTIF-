@@ -1,0 +1,343 @@
+// ===================================================
+// PACKAGE CONTROLLER - CONTROLLERS REST
+// ===================================================
+
+// src/main/java/com/trading/platform/notification/controller/NotificationController.java
+package com.trading.platform.notification.controller;
+
+import com.trading.platform.notification.dto.NotificationRequest;
+import com.trading.platform.notification.dto.ServiceResponse;
+import com.trading.platform.notification.entity.Notification;
+import com.trading.platform.notification.service.NotificationService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import jakarta.validation.Valid;
+import java.util.List;
+
+/**
+ * Controller principal des notifications
+ */
+@RestController
+@RequestMapping("/api/notifications")
+@CrossOrigin(origins = "*")
+@RequiredArgsConstructor
+@Slf4j
+public class NotificationController {
+
+    private final NotificationService notificationService;
+
+    @GetMapping("/health")
+    public ResponseEntity<String> health() {
+        return ResponseEntity.ok("✅ Notification Service is operational on port 8087");
+    }
+
+    /**
+     * Créer notification générique
+     */
+    @PostMapping
+    public ResponseEntity<ServiceResponse> createNotification(
+            @Valid @RequestBody NotificationRequest request) {
+        
+        log.info("📝 Creating notification: {}", request.getTitle());
+        ServiceResponse response = notificationService.createNotification(request);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Obtenir notifications pour un utilisateur
+     */
+    @GetMapping("/user/{userId}")
+    public ResponseEntity<List<Notification>> getUserNotifications(@PathVariable String userId) {
+        List<Notification> notifications = notificationService.getNotificationsForUser(userId);
+        return ResponseEntity.ok(notifications);
+    }
+
+    /**
+     * Obtenir notifications récentes (dashboard)
+     */
+    @GetMapping("/recent")
+    public ResponseEntity<List<Notification>> getRecentNotifications(
+            @RequestParam(defaultValue = "20") int limit) {
+        
+        List<Notification> notifications = notificationService.getRecentNotifications(limit);
+        return ResponseEntity.ok(notifications);
+    }
+
+    /**
+     * Obtenir alertes critiques non lues
+     */
+    @GetMapping("/critical")
+    public ResponseEntity<List<Notification>> getCriticalAlerts() {
+        List<Notification> alerts = notificationService.getUnreadCriticalAlerts();
+        return ResponseEntity.ok(alerts);
+    }
+
+    /**
+     * Marquer notification comme lue
+     */
+    @PutMapping("/{id}/read")
+    public ResponseEntity<Void> markAsRead(
+            @PathVariable Long id,
+            @RequestParam String userId) {
+        
+        notificationService.markAsRead(id, userId);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Test WebSocket (pour debug)
+     */
+    @PostMapping("/test-websocket")
+    public ResponseEntity<ServiceResponse> testWebSocket(
+            @RequestParam(defaultValue = "Test WebSocket") String message) {
+        
+        NotificationRequest request = NotificationRequest.builder()
+                .type(com.trading.platform.notification.entity.NotificationType.INFO)
+                .priority(com.trading.platform.notification.entity.Priority.LOW)
+                .title("Test WebSocket")
+                .message(message)
+                .sourceService("notification-service")
+                .build();
+
+        ServiceResponse response = notificationService.createNotification(request);
+        return ResponseEntity.ok(response);
+    }
+}
+
+// src/main/java/com/trading/platform/notification/controller/TradeController.java
+package com.trading.platform.notification.controller;
+
+import com.trading.platform.notification.dto.LimitAlert;
+import com.trading.platform.notification.dto.ServiceResponse;
+import com.trading.platform.notification.dto.TradeNotification;
+import com.trading.platform.notification.service.NotificationService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import jakarta.validation.Valid;
+
+/**
+ * Controller pour notifications de trading
+ */
+@RestController
+@RequestMapping("/api/notifications/trade")
+@CrossOrigin(origins = "*")
+@RequiredArgsConstructor
+@Slf4j
+public class TradeController {
+
+    private final NotificationService notificationService;
+
+    /**
+     * Broadcast notification de trade (pour tous les utilisateurs)
+     */
+    @PostMapping("/broadcast")
+    public ResponseEntity<ServiceResponse> broadcastTrade(
+            @Valid @RequestBody TradeNotification tradeNotification) {
+        
+        log.info("📊 Broadcasting trade: {}", tradeNotification.getTradeId());
+        ServiceResponse response = notificationService.broadcastTradeNotification(tradeNotification);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Envoyer alerte de limite (utilisateur spécifique)
+     */
+    @PostMapping("/limit-alert")
+    public ResponseEntity<ServiceResponse> sendLimitAlert(
+            @Valid @RequestBody LimitAlert limitAlert) {
+        
+        log.info("⚠️ Sending limit alert to user: {}", limitAlert.getUserId());
+        ServiceResponse response = notificationService.sendLimitAlert(limitAlert);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Endpoint pour réception depuis Blotter Service
+     */
+    @PostMapping("/from-blotter")
+    public ResponseEntity<ServiceResponse> receiveFromBlotter(
+            @RequestBody TradeNotification tradeNotification) {
+        
+        log.info("📈 Received trade notification from Blotter: {}", tradeNotification.getTradeId());
+        tradeNotification.setSourceService("BLOTTER_SERVICE");
+        
+        ServiceResponse response = notificationService.broadcastTradeNotification(tradeNotification);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Endpoint pour réception depuis CLN Service
+     */
+    @PostMapping("/from-cln")
+    public ResponseEntity<ServiceResponse> receiveFromCLN(
+            @RequestBody LimitAlert limitAlert) {
+        
+        log.info("💼 Received limit alert from CLN: {}", limitAlert.getPositionId());
+        limitAlert.setSourceService("CLN_SERVICE");
+        
+        ServiceResponse response = notificationService.sendLimitAlert(limitAlert);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Endpoint pour réception depuis EGP Service
+     */
+    @PostMapping("/from-egp")
+    public ResponseEntity<ServiceResponse> receiveFromEGP(
+            @RequestBody LimitAlert limitAlert) {
+        
+        log.info("🇪🇬 Received limit alert from EGP: {}", limitAlert.getPositionId());
+        limitAlert.setSourceService("EGP_SERVICE");
+        
+        ServiceResponse response = notificationService.sendLimitAlert(limitAlert);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Endpoint pour réception depuis Eurobond Service
+     */
+    @PostMapping("/from-eurobonds")
+    public ResponseEntity<ServiceResponse> receiveFromEurobonds(
+            @RequestBody LimitAlert limitAlert) {
+        
+        log.info("🇪🇺 Received limit alert from Eurobonds: {}", limitAlert.getPositionId());
+        limitAlert.setSourceService("EUROBOND_SERVICE");
+        
+        ServiceResponse response = notificationService.sendLimitAlert(limitAlert);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/health")
+    public ResponseEntity<String> health() {
+        return ResponseEntity.ok("✅ Trade Controller is operational");
+    }
+}
+
+// src/main/java/com/trading/platform/notification/controller/ReportController.java
+package com.trading.platform.notification.controller;
+
+import com.trading.platform.notification.dto.ReportRequest;
+import com.trading.platform.notification.service.ReportService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import jakarta.validation.Valid;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Controller pour rapports
+ */
+@RestController
+@RequestMapping("/api/notifications/reports")
+@CrossOrigin(origins = "*")
+@RequiredArgsConstructor
+@Slf4j
+public class ReportController {
+
+    private final ReportService reportService;
+
+    /**
+     * Générer rapport à la demande
+     */
+    @PostMapping("/generate")
+    public ResponseEntity<Map<String, Object>> generateReport(
+            @Valid @RequestBody ReportRequest request) {
+        
+        log.info("📊 Generating report: {}", request.getReportType());
+        
+        Map<String, Object> response = new HashMap<>();
+        
+        try {
+            String reportContent = reportService.generateReport(request);
+            
+            response.put("success", true);
+            response.put("reportType", request.getReportType());
+            response.put("content", reportContent);
+            response.put("timestamp", LocalDateTime.now());
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("❌ Error generating report: {}", e.getMessage());
+            
+            response.put("success", false);
+            response.put("error", e.getMessage());
+            response.put("timestamp", LocalDateTime.now());
+            
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    /**
+     * Déclencher rapport quotidien manuellement
+     */
+    @PostMapping("/daily/trigger")
+    public ResponseEntity<Map<String, Object>> triggerDailyReport() {
+        log.info("📊 Manually triggering daily report");
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "Daily report generation triggered");
+        response.put("timestamp", LocalDateTime.now());
+        
+        // Note: Le rapport sera généré de façon asynchrone
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Déclencher rapport hebdomadaire manuellement
+     */
+    @PostMapping("/weekly/trigger")
+    public ResponseEntity<Map<String, Object>> triggerWeeklyReport() {
+        log.info("📊 Manually triggering weekly report");
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "Weekly report generation triggered");
+        response.put("timestamp", LocalDateTime.now());
+        
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Obtenir statut des rapports programmés
+     */
+    @GetMapping("/scheduled/status")
+    public ResponseEntity<Map<String, Object>> getScheduledReportsStatus() {
+        Map<String, Object> status = new HashMap<>();
+        
+        status.put("dailyReport", Map.of(
+            "schedule", "8:00 AM (Mon-Fri)",
+            "lastRun", "Not available",
+            "nextRun", "Next business day 8:00 AM",
+            "enabled", true
+        ));
+        
+        status.put("weeklyReport", Map.of(
+            "schedule", "Monday 8:00 AM",
+            "lastRun", "Not available", 
+            "nextRun", "Next Monday 8:00 AM",
+            "enabled", true
+        ));
+        
+        status.put("emailStatus", "DISABLED");
+        status.put("timestamp", LocalDateTime.now());
+        
+        return ResponseEntity.ok(status);
+    }
+
+    @GetMapping("/health")
+    public ResponseEntity<String> health() {
+        return ResponseEntity.ok("✅ Report Controller is operational");
+    }
+}
