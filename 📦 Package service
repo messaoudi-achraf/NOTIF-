@@ -1,0 +1,508 @@
+// ===================================================
+// PACKAGE SERVICE - SERVICES CORE
+// ===================================================
+
+// src/main/java/com/trading/platform/notification/service/NotificationService.java
+package com.trading.platform.notification.service;
+
+import com.trading.platform.notification.dto.*;
+import com.trading.platform.notification.entity.*;
+import com.trading.platform.notification.repository.NotificationRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+/**
+ * Service principal de notification - Version simplifiée
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+@Transactional
+public class NotificationService {
+
+    private final NotificationRepository notificationRepository;
+    private final WebSocketService webSocketService;
+    private final EmailService emailService;
+
+    /**
+     * Broadcast trade notification (pour tous les utilisateurs)
+     */
+    public ServiceResponse broadcastTradeNotification(TradeNotification tradeNotification) {
+        log.info("📊 Broadcasting trade notification: {}", tradeNotification.getTradeId());
+
+        try {
+            Notification notification = Notification.builder()
+                    .type(NotificationType.TRADE_BROADCAST)
+                    .priority(Priority.MEDIUM)
+                    .title("Trade: " + tradeNotification.getBusinessProduct())
+                    .message(buildTradeMessage(tradeNotification))
+                    .sourceService(tradeNotification.getSourceService())
+                    .tradeId(tradeNotification.getTradeId())
+                    .status(NotificationStatus.PENDING)
+                    .build();
+
+            notification = notificationRepository.save(notification);
+
+            // Envoi WebSocket (broadcast à tous)
+            webSocketService.broadcastNotification(notification);
+
+            // Marquer comme envoyée
+            notification.setStatus(NotificationStatus.SENT);
+            notification.setSentAt(LocalDateTime.now());
+            notificationRepository.save(notification);
+
+            log.info("✅ Trade notification broadcasted: {}", notification.getId());
+            return ServiceResponse.success("Trade notification broadcasted", "notification-service");
+
+        } catch (Exception e) {
+            log.error("❌ Error broadcasting trade notification: {}", e.getMessage());
+            return ServiceResponse.error("Failed to broadcast trade notification", 
+                    "notification-service", "BROADCAST_ERROR");
+        }
+    }
+
+    /**
+     * Envoyer alerte limite (utilisateur spécifique)
+     */
+    public ServiceResponse sendLimitAlert(LimitAlert limitAlert) {
+        log.info("⚠️ Sending limit alert to user: {}", limitAlert.getUserId());
+
+        try {
+            Notification notification = Notification.builder()
+                    .type(NotificationType.LIMIT_ALERT)
+                    .priority(limitAlert.getPriority())
+                    .title("Limite " + limitAlert.getLimitType())
+                    .message(limitAlert.getMessage())
+                    .recipientUserId(limitAlert.getUserId())
+                    .sourceService(limitAlert.getSourceService())
+                    .positionId(limitAlert.getPositionId())
+                    .status(NotificationStatus.PENDING)
+                    .build();
+
+            notification = notificationRepository.save(notification);
+
+            // Envoi WebSocket (utilisateur spécifique)
+            webSocketService.sendToUser(limitAlert.getUserId(), notification);
+
+            // Si critique, aussi par email (si disponible)
+            if (limitAlert.getPriority() == Priority.CRITICAL) {
+                emailService.sendLimitAlertEmail(notification);
+            }
+
+            notification.setStatus(NotificationStatus.SENT);
+            notification.setSentAt(LocalDateTime.now());
+            notificationRepository.save(notification);
+
+            log.info("✅ Limit alert sent: {}", notification.getId());
+            return ServiceResponse.success("Limit alert sent", "notification-service");
+
+        } catch (Exception e) {
+            log.error("❌ Error sending limit alert: {}", e.getMessage());
+            return ServiceResponse.error("Failed to send limit alert", 
+                    "notification-service", "ALERT_ERROR");
+        }
+    }
+
+    /**
+     * Créer notification générique
+     */
+    public ServiceResponse createNotification(NotificationRequest request) {
+        log.info("📝 Creating notification: {}", request.getTitle());
+
+        try {
+            Notification notification = Notification.builder()
+                    .type(request.getType())
+                    .priority(request.getPriority())
+                    .title(request.getTitle())
+                    .message(request.getMessage())
+                    .recipientEmail(request.getRecipientEmail())
+                    .recipientUserId(request.getRecipientUserId())
+                    .sourceService(request.getSourceService())
+                    .targetService(request.getTargetService())
+                    .positionId(request.getPositionId())
+                    .tradeId(request.getTradeId())
+                    .status(NotificationStatus.PENDING)
+                    .build();
+
+            notification = notificationRepository.save(notification);
+
+            // Envoi selon le type
+            if (request.getRecipientUserId() != null) {
+                webSocketService.sendToUser(request.getRecipientUserId(), notification);
+            } else {
+                webSocketService.broadcastNotification(notification);
+            }
+
+            notification.setStatus(NotificationStatus.SENT);
+            notification.setSentAt(LocalDateTime.now());
+            notificationRepository.save(notification);
+
+            return ServiceResponse.success("Notification created", "notification-service");
+
+        } catch (Exception e) {
+            log.error("❌ Error creating notification: {}", e.getMessage());
+            return ServiceResponse.error("Failed to create notification", 
+                    "notification-service", "CREATE_ERROR");
+        }
+    }
+
+    /**
+     * Marquer notification comme lue
+     */
+    public void markAsRead(Long notificationId, String userId) {
+        notificationRepository.findById(notificationId)
+                .ifPresent(notification -> {
+                    if (userId.equals(notification.getRecipientUserId())) {
+                        notification.setReadAt(LocalDateTime.now());
+                        notification.setStatus(NotificationStatus.READ);
+                        notificationRepository.save(notification);
+                        log.info("📖 Notification marked as read: {}", notificationId);
+                    }
+                });
+    }
+
+    /**
+     * Obtenir notifications pour un utilisateur
+     */
+    public List<Notification> getNotificationsForUser(String userId) {
+        return notificationRepository.findByRecipientUserIdOrderByCreatedAtDesc(userId);
+    }
+
+    /**
+     * Obtenir alertes critiques non lues
+     */
+    public List<Notification> getUnreadCriticalAlerts() {
+        return notificationRepository.findUnreadCriticalAlerts();
+    }
+
+    /**
+     * Obtenir notifications récentes (pour dashboard)
+     */
+    public List<Notification> getRecentNotifications(int limit) {
+        return notificationRepository.findRecentNotifications(limit);
+    }
+
+    /**
+     * Construire message de trade
+     */
+    private String buildTradeMessage(TradeNotification trade) {
+        StringBuilder message = new StringBuilder();
+        message.append("Trade ").append(trade.getDirection()).append(" ");
+        message.append(trade.getBusinessProduct()).append(" ");
+        if (trade.getNominal() != null) {
+            message.append("Nominal: ").append(trade.getNominal()).append(" ");
+        }
+        if (trade.getCounterparty() != null) {
+            message.append("Contrepartie: ").append(trade.getCounterparty());
+        }
+        return message.toString();
+    }
+}
+
+// src/main/java/com/trading/platform/notification/service/WebSocketService.java
+package com.trading.platform.notification.service;
+
+import com.trading.platform.notification.entity.Notification;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Service;
+
+/**
+ * Service WebSocket pour notifications temps réel
+ */
+@Service
+@Slf4j
+public class WebSocketService {
+
+    private final SimpMessagingTemplate messagingTemplate;
+
+    public WebSocketService(SimpMessagingTemplate messagingTemplate) {
+        this.messagingTemplate = messagingTemplate;
+    }
+
+    /**
+     * Broadcast notification à tous les utilisateurs connectés
+     */
+    public void broadcastNotification(Notification notification) {
+        try {
+            messagingTemplate.convertAndSend("/topic/notifications", notification);
+            log.info("📡 WebSocket broadcast sent: {}", notification.getId());
+        } catch (Exception e) {
+            log.error("❌ WebSocket broadcast failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Envoyer notification à un utilisateur spécifique
+     */
+    public void sendToUser(String userId, Notification notification) {
+        try {
+            messagingTemplate.convertAndSendToUser(userId, "/queue/alerts", notification);
+            log.info("📱 WebSocket sent to user {}: {}", userId, notification.getId());
+        } catch (Exception e) {
+            log.error("❌ WebSocket send to user failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Envoyer alerte critique (priorité haute)
+     */
+    public void sendCriticalAlert(Notification notification) {
+        try {
+            messagingTemplate.convertAndSend("/topic/critical", notification);
+            log.warn("🚨 Critical alert sent via WebSocket: {}", notification.getId());
+        } catch (Exception e) {
+            log.error("❌ Critical alert WebSocket failed: {}", e.getMessage());
+        }
+    }
+}
+
+// src/main/java/com/trading/platform/notification/service/EmailService.java
+package com.trading.platform.notification.service;
+
+import com.trading.platform.notification.entity.Notification;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+/**
+ * Service Email - DISABLED mais classe gardée
+ */
+@Service
+@Slf4j
+public class EmailService {
+
+    @Value("${notification.email.enabled:false}")
+    private boolean emailEnabled;
+
+    /**
+     * Envoyer email d'alerte limite - DISABLED
+     */
+    public boolean sendLimitAlertEmail(Notification notification) {
+        if (!emailEnabled) {
+            log.info("📧 EMAIL DISABLED - Would send limit alert email for notification: {}", 
+                    notification.getId());
+            return true;
+        }
+        
+        // Implémentation email réelle quand activée
+        log.info("Email functionality not yet implemented");
+        return false;
+    }
+
+    /**
+     * Envoyer rapport par email - DISABLED
+     */
+    public boolean sendReportEmail(String recipient, String subject, String content) {
+        if (!emailEnabled) {
+            log.info("📧 EMAIL DISABLED - Would send report to: {}", recipient);
+            return true;
+        }
+        
+        // Implémentation email réelle quand activée
+        log.info("Report email functionality not yet implemented");
+        return false;
+    }
+
+    /**
+     * Test configuration email
+     */
+    public boolean testEmailConfiguration() {
+        log.info("📧 Email service status: {}", emailEnabled ? "ENABLED" : "DISABLED");
+        return true;
+    }
+}
+
+// src/main/java/com/trading/platform/notification/service/ServiceCommunication.java
+package com.trading.platform.notification.service;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
+/**
+ * Service pour communication avec autres services via Gateway
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class ServiceCommunication {
+
+    private final RestTemplate restTemplate;
+
+    private static final String GATEWAY_URL = "http://gateway-service:8080";
+
+    /**
+     * Envoyer notification vers un service spécifique
+     */
+    public boolean sendToService(String serviceName, Object notification) {
+        try {
+            String url = GATEWAY_URL + "/api/" + serviceName.toLowerCase() + "/notifications";
+            String response = restTemplate.postForObject(url, notification, String.class);
+            
+            log.info("✅ Notification sent to {}: {}", serviceName, response);
+            return true;
+            
+        } catch (Exception e) {
+            log.warn("❌ Failed to send notification to {}: {}", serviceName, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Vérifier santé d'un service
+     */
+    public boolean checkServiceHealth(String serviceName) {
+        try {
+            String url = GATEWAY_URL + "/api/" + serviceName.toLowerCase() + "/actuator/health";
+            String response = restTemplate.getForObject(url, String.class);
+            
+            return response != null && response.contains("UP");
+            
+        } catch (Exception e) {
+            log.warn("❌ Health check failed for {}: {}", serviceName, e.getMessage());
+            return false;
+        }
+    }
+}
+
+// src/main/java/com/trading/platform/notification/service/ReportService.java
+package com.trading.platform.notification.service;
+
+import com.trading.platform.notification.dto.ReportRequest;
+import com.trading.platform.notification.repository.NotificationRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+
+/**
+ * Service pour rapports programmés
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class ReportService {
+
+    private final NotificationRepository notificationRepository;
+    private final EmailService emailService;
+
+    /**
+     * Rapport quotidien - 8h00 en semaine
+     */
+    @Scheduled(cron = "0 0 8 * * MON-FRI")
+    public void generateDailyReport() {
+        log.info("📊 Generating daily report");
+        
+        try {
+            LocalDateTime yesterday = LocalDateTime.now().minusDays(1);
+            Object[] stats = notificationRepository.getDailyStatistics(yesterday);
+            
+            String content = buildDailyReportContent(stats);
+            
+            // Envoyer aux destinataires (email disabled pour l'instant)
+            emailService.sendReportEmail("trading@attijariwafa.com", 
+                    "Daily Notification Report", content);
+            
+            log.info("✅ Daily report generated and sent");
+            
+        } catch (Exception e) {
+            log.error("❌ Error generating daily report: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Rapport hebdomadaire - Lundi 8h00
+     */
+    @Scheduled(cron = "0 0 8 * * MON")
+    public void generateWeeklyReport() {
+        log.info("📊 Generating weekly report");
+        
+        try {
+            LocalDateTime lastWeek = LocalDateTime.now().minusDays(7);
+            
+            String content = buildWeeklyReportContent(lastWeek);
+            
+            // Envoyer aux destinataires
+            emailService.sendReportEmail("management@attijariwafa.com", 
+                    "Weekly Notification Report", content);
+            
+            log.info("✅ Weekly report generated and sent");
+            
+        } catch (Exception e) {
+            log.error("❌ Error generating weekly report: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Générer rapport à la demande
+     */
+    public String generateReport(ReportRequest request) {
+        log.info("📊 Generating on-demand report: {}", request.getReportType());
+        
+        try {
+            if ("DAILY".equals(request.getReportType())) {
+                LocalDateTime since = request.getReportDate().atStartOfDay();
+                Object[] stats = notificationRepository.getDailyStatistics(since);
+                return buildDailyReportContent(stats);
+            }
+            
+            if ("WEEKLY".equals(request.getReportType())) {
+                LocalDateTime since = request.getStartDate().atStartOfDay();
+                return buildWeeklyReportContent(since);
+            }
+            
+            return "Report type not supported";
+            
+        } catch (Exception e) {
+            log.error("❌ Error generating report: {}", e.getMessage());
+            return "Error generating report: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Construire contenu rapport quotidien
+     */
+    private String buildDailyReportContent(Object[] stats) {
+        StringBuilder content = new StringBuilder();
+        content.append("=== RAPPORT QUOTIDIEN NOTIFICATIONS ===\n");
+        content.append("Date: ").append(LocalDateTime.now().toLocalDate()).append("\n\n");
+        
+        if (stats != null && stats.length >= 4) {
+            content.append("Notifications envoyées: ").append(stats[0]).append("\n");
+            content.append("Notifications échouées: ").append(stats[1]).append("\n");
+            content.append("Notifications trades: ").append(stats[2]).append("\n");
+            content.append("Alertes limites: ").append(stats[3]).append("\n");
+        }
+        
+        content.append("\n--- Notification Service ---");
+        return content.toString();
+    }
+
+    /**
+     * Construire contenu rapport hebdomadaire
+     */
+    private String buildWeeklyReportContent(LocalDateTime since) {
+        StringBuilder content = new StringBuilder();
+        content.append("=== RAPPORT HEBDOMADAIRE NOTIFICATIONS ===\n");
+        content.append("Semaine du: ").append(since.toLocalDate()).append("\n\n");
+        
+        // Statistiques par service
+        var serviceStats = notificationRepository.getNotificationCountByService(since);
+        content.append("Notifications par service:\n");
+        for (Object[] stat : serviceStats) {
+            content.append("- ").append(stat[0]).append(": ").append(stat[1]).append("\n");
+        }
+        
+        content.append("\n--- Notification Service ---");
+        return content.toString();
+    }
+}
