@@ -1,0 +1,122 @@
+// ===================================================
+// PACKAGE ENTITY - ENTITÉS JPA SIMPLES
+// ===================================================
+
+// src/main/java/com/trading/platform/notification/entity/Notification.java
+package com.trading.platform.notification.entity;
+
+import lombok.*;
+import jakarta.persistence.*;
+import java.time.LocalDateTime;
+
+/**
+ * Entité Notification - Version simplifiée
+ */
+@Entity
+@Table(name = "notifications")
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class Notification {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private NotificationType type;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Priority priority;
+
+    @Column(nullable = false, length = 500)
+    private String title;
+
+    @Column(columnDefinition = "TEXT")
+    private String message;
+
+    @Column(name = "recipient_email")
+    private String recipientEmail;
+
+    @Column(name = "recipient_user_id")
+    private String recipientUserId;
+
+    @Column(name = "source_service")
+    private String sourceService;
+
+    @Column(name = "target_service")
+    private String targetService;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private NotificationStatus status;
+
+    @Column(name = "position_id")
+    private String positionId;
+
+    @Column(name = "trade_id")
+    private String tradeId;
+
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
+
+    @Column(name = "sent_at")
+    private LocalDateTime sentAt;
+
+    @Column(name = "read_at")
+    private LocalDateTime readAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        if (status == null) {
+            status = NotificationStatus.PENDING;
+        }
+    }
+}
+
+// src/main/java/com/trading/platform/notification/entity/NotificationType.java
+package com.trading.platform.notification.entity;
+
+/**
+ * Types de notifications
+ */
+public enum NotificationType {
+    TRADE_BROADCAST,    // Diffusion trade (tous les utilisateurs)
+    LIMIT_ALERT,        // Alerte limite (utilisateur spécifique)
+    DAILY_REPORT,       // Rapport quotidien
+    WEEKLY_REPORT,      // Rapport hebdomadaire
+    SERVICE_ALERT,      // Alerte système
+    INFO                // Information générale
+}
+
+// src/main/java/com/trading/platform/notification/entity/Priority.java
+package com.trading.platform.notification.entity;
+
+/**
+ * Priorités des notifications
+ */
+public enum Priority {
+    LOW,        // Information, rapports
+    MEDIUM,     // Trades normaux
+    HIGH,       // Alertes importantes
+    CRITICAL    // Limites dépassées, erreurs système
+}
+
+// src/main/java/com/trading/platform/notification/entity/NotificationStatus.java
+package com.trading.platform.notification.entity;
+
+/**
+ * Statuts des notifications
+ */
+public enum NotificationStatus {
+    PENDING,        // En attente d'envoi
+    SENT,          // Envoyée avec succès
+    DELIVERED,     // Délivrée (WebSocket/Email)
+    READ,          // Lue par l'utilisateur
+    FAILED,        // Échec d'envoi
+    EXPIRED        // Expirée
+}
