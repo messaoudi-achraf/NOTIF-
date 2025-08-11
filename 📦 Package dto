@@ -1,0 +1,217 @@
+// ===================================================
+// PACKAGE DTO - DTOS DE COMMUNICATION
+// ===================================================
+
+// src/main/java/com/trading/platform/notification/dto/NotificationRequest.java
+package com.trading.platform.notification.dto;
+
+import com.trading.platform.notification.entity.NotificationType;
+import com.trading.platform.notification.entity.Priority;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+
+/**
+ * DTO pour créer une notification
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class NotificationRequest {
+
+    @NotNull(message = "Type requis")
+    private NotificationType type;
+
+    @NotNull(message = "Priorité requise")
+    private Priority priority;
+
+    @NotBlank(message = "Titre requis")
+    private String title;
+
+    private String message;
+
+    private String recipientEmail;
+    private String recipientUserId;
+    private String sourceService;
+    private String targetService;
+    private String positionId;
+    private String tradeId;
+}
+
+// src/main/java/com/trading/platform/notification/dto/TradeNotification.java
+package com.trading.platform.notification.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import jakarta.validation.constraints.NotBlank;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+/**
+ * DTO pour notifications de trade (broadcast)
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class TradeNotification {
+
+    @NotBlank(message = "Trade ID requis")
+    private String tradeId;
+
+    @NotBlank(message = "Type d'asset requis")
+    private String assetClass;
+
+    @NotBlank(message = "Produit requis")
+    private String businessProduct;
+
+    private String direction; // BUY/SELL
+
+    private BigDecimal nominal;
+
+    private String counterparty;
+
+    private String bond;
+
+    private String status;
+
+    private LocalDateTime tradeDate;
+
+    private String sourceService;
+
+    private String message;
+}
+
+// src/main/java/com/trading/platform/notification/dto/LimitAlert.java
+package com.trading.platform.notification.dto;
+
+import com.trading.platform.notification.entity.Priority;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import java.math.BigDecimal;
+
+/**
+ * DTO pour alertes de limite (utilisateur spécifique)
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class LimitAlert {
+
+    @NotBlank(message = "User ID requis")
+    private String userId;
+
+    @NotBlank(message = "Type d'instrument requis")
+    private String instrumentType;
+
+    @NotBlank(message = "Position ID requis")
+    private String positionId;
+
+    @NotNull(message = "Priorité requise")
+    private Priority priority;
+
+    @NotBlank(message = "Message requis")
+    private String message;
+
+    private BigDecimal currentValue;
+    private BigDecimal limitValue;
+    private String limitType; // EXPOSURE, PNL, RISK, etc.
+    private String sourceService;
+}
+
+// src/main/java/com/trading/platform/notification/dto/ReportRequest.java
+package com.trading.platform.notification.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import jakarta.validation.constraints.NotBlank;
+import java.time.LocalDate;
+import java.util.List;
+
+/**
+ * DTO pour demande de rapport
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ReportRequest {
+
+    @NotBlank(message = "Type de rapport requis")
+    private String reportType; // DAILY, WEEKLY
+
+    private LocalDate reportDate;
+    private LocalDate startDate;
+    private LocalDate endDate;
+
+    private List<String> recipients;
+    private List<String> services; // CLN, EGP, EUROBONDS, BLOTTER
+
+    private boolean includeMetrics;
+    private boolean includeCharts;
+    private String format; // EMAIL, PDF
+}
+
+// src/main/java/com/trading/platform/notification/dto/ServiceResponse.java
+package com.trading.platform.notification.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+
+/**
+ * DTO pour réponses des services
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ServiceResponse {
+
+    private boolean success;
+    private String message;
+    private String service;
+    private Long notificationId;
+    private LocalDateTime timestamp;
+    private String errorCode;
+    private String errorDetails;
+
+    public static ServiceResponse success(String message, String service) {
+        return ServiceResponse.builder()
+                .success(true)
+                .message(message)
+                .service(service)
+                .timestamp(LocalDateTime.now())
+                .build();
+    }
+
+    public static ServiceResponse error(String message, String service, String errorCode) {
+        return ServiceResponse.builder()
+                .success(false)
+                .message(message)
+                .service(service)
+                .errorCode(errorCode)
+                .timestamp(LocalDateTime.now())
+                .build();
+    }
+}
