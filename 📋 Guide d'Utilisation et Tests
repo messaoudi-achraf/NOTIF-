@@ -1,0 +1,441 @@
+# 🔔 **NOTIFICATION SERVICE - GUIDE COMPLET**
+
+## 🚀 **DÉMARRAGE RAPIDE**
+
+### **1. Prérequis**
+```bash
+✅ PostgreSQL running (port 5432)
+✅ Base de données: trading_notifications 
+✅ Discovery Service (port 8761)
+✅ Gateway Service (port 8080) - optionnel pour tests
+```
+
+### **2. Création Base de Données**
+```sql
+-- Connectez-vous à PostgreSQL
+psql -U postgres
+
+-- Créez la base
+CREATE DATABASE trading_notifications;
+
+-- Vérifiez
+\l
+```
+
+### **3. Lancement du Service**
+```bash
+cd notification-service/
+mvn clean compile
+mvn spring-boot:run
+```
+
+### **4. Vérification Santé**
+```bash
+curl http://localhost:8087/api/notifications/health
+# Réponse: ✅ Notification Service is operational on port 8087
+```
+
+---
+
+## 📡 **ENDPOINTS PRINCIPAUX**
+
+### **🔔 Notifications Générales**
+```bash
+# Health check
+GET http://localhost:8087/api/notifications/health
+
+# Notifications récentes (dashboard)
+GET http://localhost:8087/api/notifications/recent?limit=10
+
+# Notifications pour un utilisateur
+GET http://localhost:8087/api/notifications/user/{userId}
+
+# Alertes critiques
+GET http://localhost:8087/api/notifications/critical
+
+# Marquer comme lu
+PUT http://localhost:8087/api/notifications/{id}/read?userId={userId}
+```
+
+### **📊 Trade Notifications (Broadcast)**
+```bash
+# Broadcast trade (tous les utilisateurs)
+POST http://localhost:8087/api/notifications/trade/broadcast
+Content-Type: application/json
+
+{
+  "tradeId": "TRD-2025-001",
+  "assetClass": "RATES", 
+  "businessProduct": "EGP",
+  "direction": "BUY",
+  "nominal": 2000000,
+  "counterparty": "BMCE Bank",
+  "status": "PENDING",
+  "message": "New CLN trade awaiting confirmation"
+}
+```
+
+### **💼 Depuis CLN Service**
+```bash
+# Le CLN Service peut appeler:
+POST http://localhost:8087/api/notifications/trade/from-cln
+
+{
+  "userId": "trader001",
+  "instrumentType": "CLN",
+  "positionId": "CLN-MOROC-002",
+  "priority": "CRITICAL",
+  "message": "CLN MOROC limit exceeded: 52M/50M USD",
+  "currentValue": 52000000,
+  "limitValue": 50000000,
+  "limitType": "EXPOSURE"
+}
+```
+
+### **🇪🇬 Depuis EGP Service**
+```bash
+# Le EGP Service peut appeler:
+POST http://localhost:8087/api/notifications/trade/from-egp
+
+{
+  "userId": "trader002",
+  "instrumentType": "EGP",
+  "positionId": "EGP-6M-001",
+  "priority": "HIGH",
+  "message": "EGP FX buffer below threshold: 1.8%",
+  "currentValue": 1.8,
+  "limitValue": 2.0,
+  "limitType": "FX_BUFFER"
+}
+```
+
+### **🇪🇺 Depuis Eurobond Service**
+```bash
+# Le Eurobond Service peut appeler:
+POST http://localhost:8087/api/notifications/trade/from-eurobonds
+
+{
+  "userId": "trader003",
+  "instrumentType": "EUROBONDS",
+  "positionId": "EUR-BUND-001",
+  "priority": "HIGH",
+  "message": "Duration risk exceeded on German Bund position",
+  "currentValue": 7.2,
+  "limitValue": 7.0,
+  "limitType": "DURATION_RISK"
+}
+```
+
+---
+
+## 🌐 **WEBSOCKET TEMPS RÉEL**
+
+### **📱 Connexion Frontend**
+```javascript
+// Frontend React - Connexion WebSocket
+const socket = new SockJS('http://localhost:8087/ws-notifications');
+const stompClient = Stomp.over(socket);
+
+stompClient.connect({}, function (frame) {
+    console.log('Connected: ' + frame);
+    
+    // Écouter broadcasts (tous les utilisateurs)
+    stompClient.subscribe('/topic/notifications', function (notification) {
+        const data = JSON.parse(notification.body);
+        console.log('Broadcast notification:', data);
+        // Afficher dans UI
+    });
+    
+    // Écouter alertes utilisateur spécifique
+    stompClient.subscribe('/user/queue/alerts', function (alert) {
+        const data = JSON.parse(alert.body);
+        console.log('Personal alert:', data);
+        // Afficher popup alerte
+    });
+    
+    // Écouter alertes critiques
+    stompClient.subscribe('/topic/critical', function (critical) {
+        const data = JSON.parse(critical.body);
+        console.log('CRITICAL ALERT:', data);
+        // Afficher alerte rouge urgente
+    });
+});
+```
+
+### **🧪 Test WebSocket**
+```bash
+# Tester WebSocket via API
+POST http://localhost:8087/api/notifications/test-websocket?message=Hello WebSocket
+
+# Tous les clients connectés recevront le message en temps réel
+```
+
+---
+
+## ⏰ **RAPPORTS PROGRAMMÉS**
+
+### **📅 Schedule Automatique**
+- **Rapport Quotidien**: Lundi-Vendredi à 8h00
+- **Rapport Hebdomadaire**: Lundi à 8h00
+- **Email**: DISABLED (peut être activé plus tard)
+
+### **📊 Contenu des Rapports**
+```
+=== RAPPORT QUOTIDIEN NOTIFICATIONS ===
+Date: 2025-08-11
+
+Notifications envoyées: 45
+Notifications échouées: 2
+Notifications trades: 12
+Alertes limites: 8
+
+Notifications par service:
+- BLOTTER_SERVICE: 15
+- CLN_SERVICE: 8
+- EGP_SERVICE: 5
+- EUROBOND_SERVICE: 3
+
+--- Notification Service ---
+```
+
+---
+
+## 🗄️ **BASE DE DONNÉES**
+
+### **📊 Table notifications**
+```sql
+-- Structure automatiquement créée
+CREATE TABLE notifications (
+    id BIGSERIAL PRIMARY KEY,
+    type VARCHAR(255) NOT NULL,           -- TRADE_BROADCAST, LIMIT_ALERT, etc.
+    priority VARCHAR(255) NOT NULL,       -- LOW, MEDIUM, HIGH, CRITICAL
+    title VARCHAR(500) NOT NULL,
+    message TEXT,
+    recipient_email VARCHAR(255),
+    recipient_user_id VARCHAR(255),
+    source_service VARCHAR(255),
+    target_service VARCHAR(255),
+    status VARCHAR(255) NOT NULL,         -- PENDING, SENT, DELIVERED, READ, FAILED
+    position_id VARCHAR(255),
+    trade_id VARCHAR(255),
+    created_at TIMESTAMP,
+    sent_at TIMESTAMP,
+    read_at TIMESTAMP
+);
+```
+
+### **🔍 Requêtes Utiles**
+```sql
+-- Voir notifications récentes
+SELECT * FROM notifications ORDER BY created_at DESC LIMIT 10;
+
+-- Compter par type
+SELECT type, COUNT(*) FROM notifications GROUP BY type;
+
+-- Alertes non lues
+SELECT * FROM notifications WHERE read_at IS NULL AND type = 'LIMIT_ALERT';
+
+-- Statistiques quotidiennes
+SELECT 
+    DATE(created_at) as date,
+    COUNT(*) as total,
+    COUNT(CASE WHEN status = 'SENT' THEN 1 END) as sent,
+    COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed
+FROM notifications 
+WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+GROUP BY DATE(created_at)
+ORDER BY date DESC;
+```
+
+---
+
+## 🧪 **TESTS COMPLETS**
+
+### **1. Test Service Seul**
+```bash
+# 1. Démarrer seulement Notification Service
+mvn spring-boot:run
+
+# 2. Test basique
+curl http://localhost:8087/api/notifications/health
+
+# 3. Test WebSocket
+curl -X POST "http://localhost:8087/api/notifications/test-websocket?message=Test"
+
+# 4. Test notification
+curl -X POST http://localhost:8087/api/notifications \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "INFO",
+    "priority": "LOW", 
+    "title": "Test Notification",
+    "message": "This is a test",
+    "sourceService": "test"
+  }'
+```
+
+### **2. Test avec Autres Services**
+```bash
+# Prérequis: Services démarrés dans l'ordre
+# 1. Discovery Service (8761)
+# 2. Gateway Service (8080) 
+# 3. CLN/EGP/Eurobond Services
+# 4. Notification Service (8087)
+
+# Test intégration CLN
+curl -X POST http://localhost:8087/api/notifications/trade/from-cln \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "trader001",
+    "instrumentType": "CLN",
+    "positionId": "CLN-TEST-001",
+    "priority": "HIGH",
+    "message": "Test limit alert from CLN",
+    "currentValue": 45000000,
+    "limitValue": 50000000,
+    "limitType": "EXPOSURE"
+  }'
+```
+
+### **3. Test Frontend**
+```javascript
+// Test depuis console navigateur
+fetch('http://localhost:8087/api/notifications/recent')
+  .then(response => response.json())
+  .then(data => console.log('Recent notifications:', data));
+
+// Test broadcast
+fetch('http://localhost:8087/api/notifications/trade/broadcast', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    tradeId: 'TEST-001',
+    assetClass: 'RATES',
+    businessProduct: 'TEST',
+    direction: 'BUY',
+    nominal: 1000000,
+    status: 'CONFIRMED',
+    message: 'Test trade from frontend'
+  })
+}).then(response => response.json())
+  .then(data => console.log('Broadcast result:', data));
+```
+
+---
+
+## 🔧 **CONFIGURATION EMAIL (FUTURE)**
+
+### **Activation Email**
+```properties
+# Dans application.properties - pour activer plus tard
+notification.email.enabled=true
+spring.mail.host=smtp.office365.com
+spring.mail.port=587
+spring.mail.username=notifications@attijariwafa.com
+spring.mail.password=${EMAIL_PASSWORD}
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+```
+
+---
+
+## 📈 **MONITORING**
+
+### **🔍 Health Checks**
+```bash
+# Service health
+curl http://localhost:8087/actuator/health
+
+# Detailed health  
+curl http://localhost:8087/actuator/info
+
+# Eureka status
+curl http://localhost:8761
+# Vérifier que NOTIFICATION-SERVICE est enregistré
+```
+
+### **📊 Métriques**
+```bash
+# Notifications récentes
+curl http://localhost:8087/api/notifications/recent
+
+# Alertes critiques
+curl http://localhost:8087/api/notifications/critical
+
+# Statut rapports
+curl http://localhost:8087/api/notifications/reports/scheduled/status
+```
+
+---
+
+## 🚀 **PRÊT POUR PRODUCTION !**
+
+✅ **Service Core** - Fonctionnel  
+✅ **WebSocket** - Temps réel opérationnel  
+✅ **Communication** - CLN, EGP, Eurobonds, Blotter  
+✅ **Rapports** - Programmés (email disabled)  
+✅ **Base PostgreSQL** - Structure automatique  
+✅ **Eureka** - Registration automatique  
+✅ **Tests** - Endpoints validés  
+
+**Le Notification Service est maintenant prêt à recevoir et diffuser toutes les notifications de trading !** 🎯 1000000,
+  "counterparty": "JP Morgan",
+  "status": "CONFIRMED",
+  "sourceService": "BLOTTER_SERVICE",
+  "message": "Trade EGP executed successfully"
+}
+```
+
+### **⚠️ Limit Alerts (Utilisateur Spécifique)**
+```bash
+# Alerte limite utilisateur
+POST http://localhost:8087/api/notifications/trade/limit-alert
+Content-Type: application/json
+
+{
+  "userId": "trader001",
+  "instrumentType": "CLN",
+  "positionId": "CLN-MOROC-001", 
+  "priority": "HIGH",
+  "message": "CLN MOROC limit at 85% (42.5M/50M USD)",
+  "currentValue": 42500000,
+  "limitValue": 50000000,
+  "limitType": "EXPOSURE",
+  "sourceService": "CLN_SERVICE"
+}
+```
+
+### **📊 Rapports**
+```bash
+# Générer rapport à la demande
+POST http://localhost:8087/api/notifications/reports/generate
+Content-Type: application/json
+
+{
+  "reportType": "DAILY",
+  "reportDate": "2025-08-11",
+  "recipients": ["trading@attijariwafa.com"]
+}
+
+# Déclencher rapport quotidien manuellement
+POST http://localhost:8087/api/notifications/reports/daily/trigger
+
+# Statut rapports programmés
+GET http://localhost:8087/api/notifications/reports/scheduled/status
+```
+
+---
+
+## 🔗 **INTÉGRATION AVEC AUTRES SERVICES**
+
+### **📈 Depuis Blotter Service**
+```bash
+# Le Blotter Service peut appeler:
+POST http://localhost:8087/api/notifications/trade/from-blotter
+
+{
+  "tradeId": "BLT-001",
+  "assetClass": "RATES",
+  "businessProduct": "CLN", 
+  "direction": "SELL",
+  "nominal":
