@@ -1,0 +1,101 @@
+# ===================================================
+# TESTS D'INTÉGRATION NOTIFICATION SERVICE
+# ===================================================
+
+# 1. HEALTH CHECK NOTIFICATION SERVICE
+echo "🔍 Test 1: Health Check Notification Service"
+curl http://localhost:8087/api/notifications/health
+# Attendu: "✅ Notification Service is operational on port 8087"
+
+# 2. EUREKA REGISTRATION CHECK
+echo "🔍 Test 2: Vérification Eureka Registration"
+curl http://localhost:8761/eureka/apps/NOTIFICATION-SERVICE
+# Attendu: Service visible dans Eureka
+
+# 3. GATEWAY ROUTING CHECK
+echo "🔍 Test 3: Test Gateway Routing"
+curl http://localhost:8080/api/notifications/health
+# Attendu: Même réponse via Gateway
+
+# 4. TEST WEBSOCKET BASIC
+echo "🔍 Test 4: Test WebSocket Basic"
+curl -X POST http://localhost:8087/api/notifications/test-websocket \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Test WebSocket depuis curl"}'
+
+# 5. TEST CRÉATION NOTIFICATION GÉNÉRIQUE
+echo "🔍 Test 5: Création Notification Générique"
+curl -X POST http://localhost:8087/api/notifications \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "INFO",
+    "priority": "LOW", 
+    "title": "Test Notification",
+    "message": "Message de test depuis curl",
+    "sourceService": "test-service"
+  }'
+
+# 6. TEST COMMUNICATION BLOTTER → NOTIFICATION
+echo "🔍 Test 6: Simulation Trade Notification depuis Blotter"
+curl -X POST http://localhost:8087/api/notifications/trade/broadcast \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tradeId": "TEST-001",
+    "assetClass": "CLN",
+    "businessProduct": "Credit Linked Note",
+    "direction": "BUY",
+    "nominal": 1000000,
+    "counterparty": "TEST-BANK",
+    "bond": "CLN-TEST-001",
+    "sourceService": "blotter-service"
+  }'
+
+# 7. TEST LIMIT ALERT (pour services business)
+echo "🔍 Test 7: Test Limit Alert"
+curl -X POST http://localhost:8087/api/notifications/trade/limit-alert \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "trader-001",
+    "instrumentType": "EGP",
+    "positionId": "EGP-001",
+    "priority": "HIGH",
+    "message": "Position EGP proche de la limite",
+    "sourceService": "egp-service"
+  }'
+
+# 8. TEST RÉCUPÉRATION NOTIFICATIONS RÉCENTES
+echo "🔍 Test 8: Notifications Récentes"
+curl http://localhost:8087/api/notifications/recent?limit=10
+
+# 9. TEST ALERTES CRITIQUES
+echo "🔍 Test 9: Alertes Critiques"
+curl http://localhost:8087/api/notifications/critical
+
+# 10. TEST COMMUNICATION INTER-SERVICES (si Blotter est démarré)
+echo "🔍 Test 10: Test depuis Blotter Service"
+curl -X POST http://localhost:8085/api/blotter/trades \
+  -H "Content-Type: application/json" \
+  -d '{
+    "assetClass": "RATES",
+    "way": "BUY",
+    "nominal": 1000000,
+    "counterparty": "TEST-BANK",
+    "bond": "CLN-TEST-INTEGRATION"
+  }'
+# Ce test vérifie si Blotter notifie automatiquement le Notification Service
+
+# ===================================================
+# VALIDATION ATTENDUE
+# ===================================================
+
+echo "✅ Si tous les tests retournent des réponses 200/201 avec données JSON:"
+echo "   → Notification Service est COMPATIBLE et OPÉRATIONNEL"
+echo "   → Communication inter-services FONCTIONNELLE" 
+echo "   → WebSocket configuré CORRECTEMENT"
+echo "   → Prêt pour intégration Frontend React"
+
+echo "🎯 PROCHAINES ÉTAPES:"
+echo "   1. Tester WebSocket avec Frontend React"
+echo "   2. Valider les alertes en temps réel"
+echo "   3. Configurer les rapports programmés"
+echo "   4. Activer les notifications email (optionnel)"
